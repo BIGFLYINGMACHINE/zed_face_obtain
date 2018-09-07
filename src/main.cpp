@@ -4,7 +4,7 @@
 
 // OpenCV includes
 #include <opencv2/opencv.hpp>
-
+#include <iostream>
 // Sample includes
 #include <SaveDepth.hpp>
 #include <string>
@@ -13,33 +13,25 @@ using namespace sl;
 cv::Mat slMat2cvMat(Mat& input);
 void printHelp();
 
-int main(int argc, char **argv) {
+int main() {
 
-    // Create a ZED camera object
-    Camera zed;
+	Camera zed;
 
-    // Set configuration parameters
-    InitParameters init_params;
-    init_params.camera_resolution = RESOLUTION_HD1080;
-    init_params.depth_mode = DEPTH_MODE_PERFORMANCE;
-    init_params.coordinate_units = UNIT_METER;
-    if (argc > 1) init_params.svo_input_filename.set(argv[1]);
-        
-    // Open the camera
-    ERROR_CODE err = zed.open(init_params);
-    if (err != SUCCESS) {
-        printf("%s\n", toString(err).c_str());
-        zed.close();
-        return 1; // Quit if an error occurred
-    }
-
-    // Display help in console
-    printHelp();
-
-    // Set runtime parameters after opening the camera
-    RuntimeParameters runtime_parameters;
-    runtime_parameters.sensing_mode = SENSING_MODE_STANDARD;
-
+	cv::namedWindow("left");
+	cv::namedWindow("right");
+	//要定义windows才能使用setMousecallBack
+	
+	InitParameters init_params;
+	init_params.camera_resolution = RESOLUTION_HD720;//分辨率
+	init_params.camera_fps = 30;//帧数
+	
+	ERROR_CODE err = zed.open(init_params);
+	if (err != SUCCESS)
+	{
+		printf("%s\n", toString(err).c_str());
+		zed.close();
+		return 1;
+	}
     // Prepare new image size to retrieve half-resolution images
     Resolution image_size = zed.getResolution();
     int new_width = image_size.width;
@@ -47,10 +39,11 @@ int main(int argc, char **argv) {
 
     // To share data between sl::Mat and cv::Mat, use slMat2cvMat()
     // Only the headers and pointer to the sl::Mat are copied, not the data itself
-    Mat image_zed(new_width, new_height, MAT_TYPE_8U_C4);
-    cv::Mat cv_left = slMat2cvMat(image_zed);
+    Mat image_zed_left(new_width, new_height, MAT_TYPE_8U_C4);
+    cv::Mat cv_left = slMat2cvMat(image_zed_left);
 	Mat image_zed_right(new_width, new_height, MAT_TYPE_8U_C4);
 	cv::Mat cv_right = slMat2cvMat(image_zed_right);
+	
 	char name[20];
 	static int count=0;
 	
@@ -58,40 +51,55 @@ int main(int argc, char **argv) {
     char key = ' ';
     while (key != 'q') {
 
-        if (zed.grab(runtime_parameters) == SUCCESS) 
+        if (zed.grab() == SUCCESS) 
 		{
 
             // Retrieve the left image, depth image in half-resolution
-            zed.retrieveImage(image_zed, VIEW_LEFT, MEM_CPU, new_width, new_height);
+            zed.retrieveImage(image_zed_left, VIEW_LEFT, MEM_CPU, new_width, new_height);
 			zed.retrieveImage(image_zed_right, VIEW_RIGHT, MEM_CPU, new_width, new_height);
+			cv_left = slMat2cvMat(image_zed_left);
+			cv_right = slMat2cvMat(image_zed_right);
+			cv::cvtColor(cv_left, cv_left, cv::COLOR_BGRA2BGR);
+			cv::cvtColor(cv_right, cv_right, cv::COLOR_BGRA2BGR);
+			cv_left.convertTo(cv_left, CV_8U);
+			cv_right.convertTo(cv_right, CV_8U);
+			assert(cv_left.channels() == 3&&cv_right.channels()==3);
 			for (int i = 0; i < 2; i++)
 			{
 				cv::Mat src_img, gray_img;
 				if (i == 0)
 				{
-					cv::Mat src_img = cv_left;
+					std::cout << "cv_left.channels:" << cv_left.channels() << std::endl;
+					src_img = cv_left;
 				}
 				if (i == 1)
 				{
-					cv::Mat src_img = cv_right;
+					src_img = cv_right;
 				}
 				std::vector<cv::Rect> faces;
+				std::cout << "channels:"<<src_img.channels() << std::endl;
 				cv::cvtColor(src_img, gray_img, CV_RGB2GRAY);
 				cv::CascadeClassifier cascade;
-				cascade.load("D:\\opencv - 3.4.1\\build\\install\\etc\\haarcascades\\haarcascade_frontalface_default.xml");
+				cascade.load("D:\\opencv-3.4.1\\build\\install\\etc\\haarcascades\\haarcascade_frontalface_default.xml");
 				cascade.detectMultiScale(gray_img, faces, 1.1, 2, 0|CV_HAAR_SCALE_IMAGE, cv::Size(30, 30));
 				for (int i = 0; i < faces.size(); i++)
 				{
 					cv::Mat face;
 					src_img(faces[i]).copyTo(face);
-					sprintf(name, "./myfaces/face/%d.jpg", count++);
+					sprintf(name, "./myfaces/face%d.jpg", count++);
 					cv::imwrite(name, face);
 				}
 			}
             // Handle key event
+			cv::imshow("left", cv_left);
+			cv::imshow("right", cv_right);
             key = cv::waitKey(10);
             processKeyEvent(zed, key);
         }
+		else
+		{
+			printf("can not grab");
+		}
     }
     zed.close();
     return 0;
